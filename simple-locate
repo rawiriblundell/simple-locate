@@ -18,8 +18,12 @@ fi
 
 # Now check that the file exists
 if [ ! -f "${listFile}" ]; then
-  printf "%s\n" "[INFO]: ${listFile} does not appear to exist, please wait while I generate it."
-  # TO-DO code to do this
+  if command -v update-smlocate; then
+    update-smlocate 2>/dev/null
+  else
+    printf "%s\n" "[INFO]: ${listFile} does not appear to exist, and 'update-smlocate' couldn't be found."
+    exit 1
+  fi
 fi
 
 # Direct Solaris to use xpg4 grep, which doesn't suck:

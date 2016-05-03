@@ -6,30 +6,44 @@
 
 # Style note: This uses awful backticks for SVR4 compatibility
 
+# TO-DO: Figure out a portable way to optionally confine this to local fs's only
+
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
-  mkdir -p "${destDir}"
-  # TO-DO: ensure correct permissions/ownership?
+  if [ ! -w "${destDir}" ]; then
+    destDir=/tmp
+  else
+    mkdir -p "${destDir}"
+    # TO-DO: ensure correct permissions/ownership?
+  fi
 fi
 
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable file
   find / 2>/dev/null | sort > "${destDir}"/locate.root
-
-  # TO-DO: ensure permissions/ownership on that file?
+  
+  # Ensure correct ownership and permissions
+  chown root:root "${destDir}"/locate.root
+  chmod 440 "${destDir}"/locate.root
 
   # Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
   # This should remove most files that aren't accessible to users, without
   # needing to stat/test every file
   su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${destDir}/locate.user"
 
-  # TO-DO: ensure permissions/ownership on that file?
+  # Ensure correct ownership and permissions
+  chmod 444 "${destDir}"/locate.user
 
 # Otherwise, we just generate what we can (i.e. manual run)
 else
+  # This will list files limited to the invocating user
+  printf "%s\n" "INFO: building index now, this may take a while..."
   find / 2>/dev/null | sort > ${destDir}/locate.user
+
+  # Ensure correct ownership and permissions
+  chmod 444 "${destDir}"/locate.user
 fi

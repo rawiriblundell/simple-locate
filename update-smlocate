@@ -16,7 +16,7 @@ if [ ! -d "${destDir}" ]; then
 fi
 
 # If we're running as root, we can generate both files
-if [ ! -w / ]; then
+if [ -w / ]; then
   # Create our root-readable file
   find / 2>/dev/null | sort > "${destDir}"/locate.root
 

@@ -9,6 +9,11 @@
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
+# If this directory doesn't exist, rever to /tmp
+if [ ! -d "${destDir}" ]; then
+  destDir=/tmp
+fi
+
 # If the user is root, we can search the root file
 if [ -w / ]; then
   listFile="${destDir}"/locate.root
@@ -16,9 +21,27 @@ else
   listFile="${destDir}"/locate.user
 fi
 
+# Direct Solaris to use xpg4 utils, which don't suck:
+if [ "`uname`" = SunOS ]; then
+  PATH=/usr/xpg4/bin:$PATH
+  export PATH
+fi
+
+# If we are launched without any args, output usage
+if [ -z "$*" ]; then
+  printf "%s\n" "simple-locate - a poor sysadmin's 'locate' alternative" "" \
+    "This program is basically a veneer-thin wrapper for 'egrep'" \
+    "It selects either a root-readable db or a user-readable db" \
+    "depending on whether you're root or not." "" \
+    "Everything you command is passed otherwise verbatim to 'egrep'" \
+    "so all 'egrep' options apply to this program too."
+  exit 0
+fi
+
 # Now check that the file exists
 if [ ! -f "${listFile}" ]; then
-  if command -v update-smlocate; then
+  if command -v update-smlocate >/dev/null 2>&1; then
+    printf "%s\n" "[INFO]: ${listFile} not found, attempting to generate it with 'update-smlocate'"
     update-smlocate 2>/dev/null
   else
     printf "%s\n" "[INFO]: ${listFile} does not appear to exist, and 'update-smlocate' couldn't be found."
@@ -26,8 +49,5 @@ if [ ! -f "${listFile}" ]; then
   fi
 fi
 
-# Direct Solaris to use xpg4 grep, which doesn't suck:
-if [ `uname` = SunOS ]; then
-  PATH=/usr/xpg4/bin:$PATH
-  export PATH
-fi
+# Otherwise, pass everything to egrep
+egrep "$@" "${listFile}"

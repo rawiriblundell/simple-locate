@@ -1,0 +1,29 @@
+#!/bin/sh
+# Purpose:   Provide 'locate' type functionality to systems without it
+# Author:    Rawiri Blundell
+# Copyright: MIT licence
+# Date:      20160503
+
+# Style note: This uses awful backticks for SVR4 compatibility
+
+# Select a destination directory
+destDir=/var/lib/simple-locate
+
+# If the user is root, we can search the root file
+if [ -w / ]; then
+  listFile="${destDir}"/locate.root
+else
+  listFile="${destDir}"/locate.user
+fi
+
+# Now check that the file exists
+if [ ! -f "${listFile}" ]; then
+  printf "%s\n" "[INFO]: ${listFile} does not appear to exist, please wait while I generate it."
+  # TO-DO code to do this
+fi
+
+# Direct Solaris to use xpg4 grep, which doesn't suck:
+if [ `uname` = SunOS ]; then
+  PATH=/usr/xpg4/bin:$PATH
+  export PATH
+fi

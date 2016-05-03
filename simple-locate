@@ -9,7 +9,7 @@
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
-# If this directory doesn't exist, rever to /tmp
+# If this directory doesn't exist, revert to /tmp
 if [ ! -d "${destDir}" ]; then
   destDir=/tmp
 fi

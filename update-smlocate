@@ -1,0 +1,34 @@
+#!/bin/sh
+# Purpose:   Build file lists for use by simple-locate
+# Author:    Rawiri Blundell
+# Copyright: MIT licence
+# Date:      20160503
+
+# Style note: This uses awful backticks for SVR4 compatibility
+
+# Select a destination directory
+destDir=/var/lib/simple-locate
+
+# Ensure we're running as root
+if [ ! -w / ]; then
+  printf "%s\n" "[ERROR] simple-locate: This file generator must be run as root"
+  exit 1
+fi
+
+# Ensure the destination directory exists
+if [ ! -d "${destDir}" ]; then
+  mkdir -p "${destDir}"
+  # TO-DO: ensure correct permissions/ownership?
+fi
+
+# Create our root-readable file
+find / 2>/dev/null | sort > "${destDir}"/locate.root 
+
+# TO-DO: ensure permissions/ownership on that file?
+
+# Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
+# This should remove most files that aren't accessible to users, without
+# needing to stat/test every file
+su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${destDir}/locate.user "
+
+# TO-DO: ensure permissions/ownership on that file?

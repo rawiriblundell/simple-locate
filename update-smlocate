@@ -9,26 +9,27 @@
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
-# Ensure we're running as root
-if [ ! -w / ]; then
-  printf "%s\n" "[ERROR] simple-locate: This file generator must be run as root"
-  exit 1
-fi
-
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
   mkdir -p "${destDir}"
   # TO-DO: ensure correct permissions/ownership?
 fi
 
-# Create our root-readable file
-find / 2>/dev/null | sort > "${destDir}"/locate.root 
+# If we're running as root, we can generate both files
+if [ ! -w / ]; then
+  # Create our root-readable file
+  find / 2>/dev/null | sort > "${destDir}"/locate.root
 
-# TO-DO: ensure permissions/ownership on that file?
+  # TO-DO: ensure permissions/ownership on that file?
 
-# Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
-# This should remove most files that aren't accessible to users, without
-# needing to stat/test every file
-su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${destDir}/locate.user "
+  # Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
+  # This should remove most files that aren't accessible to users, without
+  # needing to stat/test every file
+  su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${destDir}/locate.user"
 
-# TO-DO: ensure permissions/ownership on that file?
+  # TO-DO: ensure permissions/ownership on that file?
+
+# Otherwise, we just generate what we can (i.e. manual run)
+else
+  find / 2>/dev/null | sort > ${destDir}/locate.user
+fi

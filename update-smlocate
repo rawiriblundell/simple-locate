@@ -6,15 +6,37 @@
 
 # Style note: This uses awful backticks for SVR4 compatibility
 
-# TO-DO: Figure out a portable way to optionally confine this to local fs's only
-
 # Select a destination directory
 destDir=/var/lib/simple-locate
+
+# Directories to ignore.  Built up from Linux and Solaris so far...
+# Try to keep it alphabetical if you add anything...
+pruneDirs="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp "
+
+# Filesystem types to ignore.  Built up from Linux and Solaris so far...
+# Try to keep it alphabetical if you add anything...
+pruneFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs ncpfs nfs NFS objfs proc shfs smbfs sysfs tmpfs uvfs"
+
+# Figure out our tmp directory.  We want any existing index files to be available 
+# during generation of the new ones.  So we build into tmp then move into place
+if [ -d /tmp ]; then
+  tmpDir=/tmp
+elif [ -d /var/tmp ]; then
+  tmpDir=/var/tmp
+elif [ -d /usr/tmp ]; then
+  tmpDir=/usr/tmp
+fi
+
+# This one can't be blank
+if [ -z "${tmpDir}" ]; then
+  printf "%s\n" "[ERROR]: Unable to determine the tmp directory on this system."
+  exit 1
+fi
 
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
   if [ ! -w "${destDir}" ]; then
-    destDir=/tmp
+    destDir="${tmpDir}"
   else
     mkdir -p "${destDir}"
     # TO-DO: ensure correct permissions/ownership?
@@ -24,26 +46,33 @@ fi
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable file
-  find / 2>/dev/null | sort > "${destDir}"/locate.root
+  find / 2>/dev/null | sort > "${tmpDir}"/locate.root
   
   # Ensure correct ownership and permissions
-  chown root:root "${destDir}"/locate.root
-  chmod 440 "${destDir}"/locate.root
+  chown root:root "${tmpDir}"/locate.root
+  chmod 440 "${tmpDir}"/locate.root
 
   # Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
   # This should remove most files that aren't accessible to users, without
   # needing to stat/test every file
-  su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${destDir}/locate.user"
+  su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${tmpDir}/locate.user"
 
   # Ensure correct ownership and permissions
-  chmod 444 "${destDir}"/locate.user
+  chmod 444 "${tmpDir}"/locate.user
 
 # Otherwise, we just generate what we can (i.e. manual run)
 else
   # This will list files limited to the invocating user
   printf "%s\n" "INFO: building index now, this may take a while..."
-  find / 2>/dev/null | sort > ${destDir}/locate.user
+  find / 2>/dev/null | sort > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
-  chmod 444 "${destDir}"/locate.user
+  chmod 444 "${tmpDir}"/locate.user
 fi
+
+# If tmpDir and destDir are different, move the tmp files to the destination
+if [ ! "${tmpDir}" = "${destDir}" ]; then
+  mv "${tmpDir}"/locate.root "${destDir}"
+  mv "${tmpDir}"/locate.user "${destDir}"
+fi
+ 

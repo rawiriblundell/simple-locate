@@ -9,9 +9,18 @@
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
-# If this directory doesn't exist, revert to /tmp
+# Figure out our tmp directory.  If destDir doesn't exist, we check here next.
+if [ -d /tmp ]; then
+  tmpDir=/tmp
+elif [ -d /var/tmp ]; then
+  tmpDir=/var/tmp
+elif [ -d /usr/tmp ]; then
+  tmpDir=/usr/tmp
+fi
+
+# If this directory doesn't exist, revert to tmpDir
 if [ ! -d "${destDir}" ]; then
-  destDir=/tmp
+  destDir="${tmpDir}"
 fi
 
 # If the user is root, we can search the root file

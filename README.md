@@ -11,4 +11,4 @@ It's 2016 now.  Hard drive space is running rampant, so we can do away with the 
 
 To install, simply drop these scripts into an appropriate place in your `$PATH` e.g. `/usr/local/bin`, then obviously ensure they are executable with `chmod +x`.  Next, setup a `cron` entry to your liking for the update script.  Then you could optionally manually run it.
 
-If you don't have an existing `locate` binary, you can rename `simple-locate` to `locate`, or symlink it.
+If you don't have an existing `locate` binary, you can rename `simple-locate` to `locate`, or symlink it.  These scripts will otherwise not conflict with, and will happily live side by side with a classic flavour of `locate`.

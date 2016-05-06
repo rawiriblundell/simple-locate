@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2006
 # Purpose:   Build file lists for use by simple-locate
 # Author:    Rawiri Blundell
 # Copyright: MIT licence
@@ -19,7 +20,7 @@ for fs in ${exclFS}; do
   pruneFS="${pruneFS} -o -fstype ${fs}"
 done
 # Now we chop off the unwanted "-o" at the start of the variable
-pruneFS=$(echo "${pruneFS}" | cut -d " " -f3-)
+pruneFS=`echo "${pruneFS}" | cut -d " " -f3-`
 
 # Directories to ignore.  Built up from Linux and Solaris so far...
 # Try to keep it alphabetical if you add anything...
@@ -68,6 +69,7 @@ fi
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable file
+  # shellcheck disable=SC2086
   find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
   
   # Ensure correct ownership and permissions
@@ -86,6 +88,7 @@ if [ -w / ]; then
 else
   # This will list files limited to the invocating user
   printf "%s\n" "INFO: building index now, this may take a while..."
+  # shellcheck disable=SC2086
   find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions

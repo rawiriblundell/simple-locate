@@ -9,13 +9,35 @@
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
-# Directories to ignore.  Built up from Linux and Solaris so far...
-# Try to keep it alphabetical if you add anything...
-pruneDirs="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp "
-
 # Filesystem types to ignore.  Built up from Linux and Solaris so far...
 # Try to keep it alphabetical if you add anything...
-pruneFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs ncpfs nfs NFS objfs proc shfs smbfs sysfs tmpfs uvfs"
+exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
+
+# We convert this to a find friendly list too
+pruneFS=
+for fs in ${exclFS}; do
+  pruneFS="${pruneFS} -o -fstype ${fs}"
+done
+# Now we chop off the unwanted "-o" at the start of the variable
+pruneFS=$(echo "${pruneFS}" | cut -d " " -f3-)
+
+# Directories to ignore.  Built up from Linux and Solaris so far...
+# Try to keep it alphabetical if you add anything...
+exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp"
+
+# Now we convert this to a list we can use in find.
+# We basically want to convert "/afs /amd ..." 
+# to "-o -fstype d -name /afs -o -fstype d -name /amd ..."
+
+# There's very likely a non-portable, very elegant way to do this with 'sed' or 'awk'
+
+# We start by blanking out a new variable
+prunePaths=
+
+# Then for each item in the exclPaths list, we build up the new variable
+for path in ${exclPaths}; do
+  prunePaths="${prunePaths} -o -type d -name ${path}"
+done
 
 # Figure out our tmp directory.  We want any existing index files to be available 
 # during generation of the new ones.  So we build into tmp then move into place
@@ -46,7 +68,7 @@ fi
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable file
-  find / 2>/dev/null | sort > "${tmpDir}"/locate.root
+  find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
   
   # Ensure correct ownership and permissions
   chown root:root "${tmpDir}"/locate.root
@@ -55,7 +77,7 @@ if [ -w / ]; then
   # Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
   # This should remove most files that aren't accessible to users, without
   # needing to stat/test every file
-  su -s /bin/sh nobody -c "find / 2>/dev/null | sort > ${tmpDir}/locate.user"
+  su -s /bin/sh nobody -c "find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user
@@ -64,7 +86,7 @@ if [ -w / ]; then
 else
   # This will list files limited to the invocating user
   printf "%s\n" "INFO: building index now, this may take a while..."
-  find / 2>/dev/null | sort > ${tmpDir}/locate.user
+  find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user
@@ -75,4 +97,3 @@ if [ ! "${tmpDir}" = "${destDir}" ]; then
   mv "${tmpDir}"/locate.root "${destDir}"
   mv "${tmpDir}"/locate.user "${destDir}"
 fi
- 

@@ -1,10 +1,17 @@
 #!/bin/sh
+# shellcheck disable=SC2006
 # Purpose:   Provide 'locate' type functionality to systems without it
 # Author:    Rawiri Blundell
 # Copyright: MIT licence
 # Date:      20160503
 
 # Style note: This uses awful backticks for SVR4 compatibility
+
+# Direct Solaris to use xpg4 utils, which don't suck:
+if [ "`uname`" = SunOS ]; then
+  PATH=/usr/xpg4/bin:$PATH
+  export PATH
+fi
 
 # Select a destination directory
 destDir=/var/lib/simple-locate
@@ -18,7 +25,7 @@ elif [ -d /usr/tmp ]; then
   tmpDir=/usr/tmp
 fi
 
-# If this directory doesn't exist, revert to tmpDir
+# If destDir doesn't exist, revert to tmpDir
 if [ ! -d "${destDir}" ]; then
   destDir="${tmpDir}"
 fi
@@ -28,12 +35,6 @@ if [ -w / ]; then
   listFile="${destDir}"/locate.root
 else
   listFile="${destDir}"/locate.user
-fi
-
-# Direct Solaris to use xpg4 utils, which don't suck:
-if [ "`uname`" = SunOS ]; then
-  PATH=/usr/xpg4/bin:$PATH
-  export PATH
 fi
 
 # If we are launched without any args, output usage
@@ -58,5 +59,5 @@ if [ ! -f "${listFile}" ]; then
   fi
 fi
 
-# Otherwise, pass everything to egrep
-egrep "$@" "${listFile}"
+# Otherwise, pass everything to egrep and sort the output
+egrep "$@" "${listFile}" | sort

@@ -63,26 +63,11 @@ fi
 
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
-  if [ ! -w "${destDir}" ]; then
+  # If we can't create it, set destDir to tmpDir
+  if ! mkdir -p "${destDir}" 2>/dev/null; then
     destDir="${tmpDir}"
-  else
-    mkdir -p "${destDir}"
     # TO-DO: ensure correct permissions/ownership?
   fi
-fi
-
-# Figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
-# First we test if "true" returns 0, if so we can go ahead with this style
-if su nobody -c "true" > /dev/null 2>&1; then
-  suOpt=""
-# Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
-elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
-  suOpt="-s /bin/sh"
-# If neither works, print a notification, then fail back to nothing and hope for the best
-else
-  printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
-    "Proceeding on the assumption that it does not.  YMMV."
-  suOpt=""
 fi
 
 # If we're running as root, we can generate both files
@@ -97,7 +82,19 @@ if [ -w / ]; then
 
   # Create our user-readable file. This should remove most files that aren't 
   # accessible to users, without needing to stat/test every file
-  su nobody "${suOpt}" -c "find / ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  # We need to figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
+  # First we test if "true" returns 0, if so we can go ahead with this style
+  if su nobody -c "true" > /dev/null 2>&1; then
+    su nobody -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
+  elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
+    su nobody -s /bin/sh -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  # If neither works, print a notification, then fail back to nothing and hope for the best
+  else
+    printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
+      "Proceeding on the assumption that it does not.  YMMV."
+    su nobody -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  fi
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user

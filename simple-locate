@@ -16,6 +16,9 @@ fi
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
+# Define a maximum age in days for the list before we complain
+maxAge=7
+
 # Figure out our tmp directory.  If destDir doesn't exist, we check here next.
 if [ -d /tmp ]; then
   tmpDir=/tmp
@@ -59,5 +62,12 @@ if [ ! -f "${listFile}" ]; then
   fi
 fi
 
-# Otherwise, pass everything to egrep and sort the output
+# Check the file's age and warn if it exceeds maxAge
+if find "${listFile}" -mtime +"${maxAge}" >/dev/null 2>&1; then
+  printf "%s\n" "[INFO] - smlocate: ${listFile} is older than ${maxAge} days old." \
+    "Please run 'update-smlocate', and investigate setting it up as a cron job." \
+    "This will ensure that search results stay up to date." "---"
+fi
+
+# Finally, pass everything to egrep and sort the output
 egrep "$@" "${listFile}" | sort

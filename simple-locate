@@ -63,7 +63,8 @@ if [ ! -f "${listFile}" ]; then
 fi
 
 # Check the file's age and warn if it exceeds maxAge
-if find "${listFile}" -mtime +"${maxAge}" >/dev/null 2>&1; then
+# Note the brackets here are required as 'find' always returns 0
+if [ find "${listFile}" -mtime +"${maxAge}" >/dev/null 2>&1 ]; then
   printf "%s\n" "[INFO] - smlocate: ${listFile} is older than ${maxAge} days old." \
     "Please run 'update-smlocate', and investigate setting it up as a cron job." \
     "This will ensure that search results stay up to date." "---"

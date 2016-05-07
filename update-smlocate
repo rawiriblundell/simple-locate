@@ -43,7 +43,7 @@ done
 
 # If you want to add certain paths to the index, add them here in a space separated list
 # Again, do NOT add trailing slashes
-inclPaths=""
+inclPaths="/"
 
 # Figure out our tmp directory.  We want any existing index files to be available 
 # during generation of the new ones.  So we build into tmp then move into place
@@ -74,7 +74,7 @@ fi
 if [ -w / ]; then
   # Create our root-readable file
   # shellcheck disable=SC2086
-  find / "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
+  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
 
   # Ensure correct ownership and permissions
   chown root:root "${tmpDir}"/locate.root
@@ -85,15 +85,15 @@ if [ -w / ]; then
   # We need to figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
   # First we test if "true" returns 0, if so we can go ahead with this style
   if su nobody -c "true" > /dev/null 2>&1; then
-    su nobody -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
   # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
   elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
-    su nobody -s /bin/sh -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
   # If neither works, print a notification, then fail back to nothing and hope for the best
   else
     printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
       "Proceeding on the assumption that it does not.  YMMV."
-    su nobody -c "find / ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
   fi
 
   # Ensure correct ownership and permissions

@@ -77,7 +77,7 @@ if [ -w / ]; then
   find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
 
   # Ensure correct ownership and permissions
-  chown root:root "${tmpDir}"/locate.root
+  chown 0:0 "${tmpDir}"/locate.root
   chmod 440 "${tmpDir}"/locate.root
 
   # Create our user-readable file. This should remove most files that aren't 
@@ -89,6 +89,9 @@ if [ -w / ]; then
   # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
   elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
     su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  # Put in handling for FreeBSD (to be tested and fixed)
+  elif [ "`uname`" = FreeBSD ]; then
+    su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null" > ${tmpDir}/locate.user
   # If neither works, print a notification, then fail back to nothing and hope for the best
   else
     printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \

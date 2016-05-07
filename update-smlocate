@@ -104,7 +104,7 @@ else
   # This will list files limited to the invocating user
   printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
   # shellcheck disable=SC2086
-  find / "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
+  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user

@@ -24,6 +24,7 @@ pruneFS=`echo "${pruneFS}" | cut -d " " -f3-`
 
 # Directories to ignore.  Built up from Linux and Solaris so far...
 # Try to keep it alphabetical if you add anything...
+# Note: Do NOT add trailing slashes
 exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp"
 
 # Now we convert this to a list we can use in find.
@@ -40,6 +41,10 @@ for path in ${exclPaths}; do
   prunePaths="${prunePaths} -o -type d -name ${path}"
 done
 
+# If you want to add certain paths to the index, add them here in a space separated list
+# Again, do NOT add trailing slashes
+inclPaths=""
+
 # Figure out our tmp directory.  We want any existing index files to be available 
 # during generation of the new ones.  So we build into tmp then move into place
 if [ -d /tmp ]; then
@@ -52,7 +57,7 @@ fi
 
 # This one can't be blank
 if [ -z "${tmpDir}" ]; then
-  printf "%s\n" "[ERROR]: Unable to determine the tmp directory on this system."
+  printf "%s\n" "[ERROR] - smlocate: Unable to determine the tmp directory on this system."
   exit 1
 fi
 
@@ -66,20 +71,33 @@ if [ ! -d "${destDir}" ]; then
   fi
 fi
 
+# Figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
+# First we test if "true" returns 0, if so we can go ahead with this style
+if su nobody -c "true" > /dev/null 2>&1; then
+  suOpt=""
+# Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
+elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
+  suOpt="-s /bin/sh"
+# If neither works, print a notification, then fail back to nothing and hope for the best
+else
+  printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
+    "Proceeding on the assumption that it does not.  YMMV."
+  suOpt=""
+fi
+
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable file
   # shellcheck disable=SC2086
-  find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
-  
+  find / "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
+
   # Ensure correct ownership and permissions
   chown root:root "${tmpDir}"/locate.root
   chmod 440 "${tmpDir}"/locate.root
 
-  # Create our user-readable file.  We use -s to override /bin/false or /bin/nologin
-  # This should remove most files that aren't accessible to users, without
-  # needing to stat/test every file
-  su -s /bin/sh nobody -c "find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+  # Create our user-readable file. This should remove most files that aren't 
+  # accessible to users, without needing to stat/test every file
+  su nobody "${suOpt}" -c "find / ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user
@@ -87,9 +105,9 @@ if [ -w / ]; then
 # Otherwise, we just generate what we can (i.e. manual run)
 else
   # This will list files limited to the invocating user
-  printf "%s\n" "INFO: building index now, this may take a while..."
+  printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
   # shellcheck disable=SC2086
-  find / \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
+  find / "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user

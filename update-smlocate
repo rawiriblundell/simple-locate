@@ -12,7 +12,11 @@ destDir=/var/lib/simple-locate
 
 # Filesystem types to ignore.  Built up from Linux and Solaris so far...
 # Try to keep it alphabetical if you add anything...
-exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
+if [ "`uname`" = FreeBSD ]; then
+  exclFS="nfs"
+else
+  exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
+fi
 
 # We convert this to a find friendly list too
 pruneFS=
@@ -89,10 +93,10 @@ if [ -w / ]; then
   # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
   elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
     su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
-  # Put in handling for FreeBSD (to be tested and fixed)
+  # Put in handling for FreeBSD
   elif [ "`uname`" = FreeBSD ]; then
-    su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null" > ${tmpDir}/locate.user
-  # If neither works, print a notification, then fail back to nothing and hope for the best
+    su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print" > ${tmpDir}/locate.user 2>/dev/null
+  # If nothing works, print a notification, then fail back to nothing and hope for the best
   else
     printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
       "Proceeding on the assumption that it does not.  YMMV."
@@ -107,7 +111,7 @@ else
   # This will list files limited to the invocating user
   printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
   # shellcheck disable=SC2086
-  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
+  find / "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user

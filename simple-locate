@@ -54,10 +54,10 @@ fi
 # Now check that the file exists
 if [ ! -f "${listFile}" ]; then
   if command -v update-smlocate >/dev/null 2>&1; then
-    printf "%s\n" "[INFO]: ${listFile} not found, attempting to generate it with 'update-smlocate'"
+    printf "%s\n" "[INFO] - smlocate: ${listFile} not found, attempting to generate it with 'update-smlocate'"
     update-smlocate 2>/dev/null
   else
-    printf "%s\n" "[INFO]: ${listFile} does not appear to exist, and 'update-smlocate' couldn't be found."
+    printf "%s\n" "[INFO] - smlocate: ${listFile} does not appear to exist, and 'update-smlocate' couldn't be found."
     exit 1
   fi
 fi
@@ -70,4 +70,4 @@ if find "${listFile}" -mtime +"${maxAge}" >/dev/null 2>&1; then
 fi
 
 # Finally, pass everything to egrep and sort the output
-egrep "$@" "${listFile}" | sort
+egrep "$@" "${listFile}" | sort | uniq

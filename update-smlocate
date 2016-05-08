@@ -68,7 +68,9 @@ fi
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
   # If we can't create it, set destDir to tmpDir
-  if ! mkdir -p "${destDir}" 2>/dev/null; then
+  mkdir -p "${destDir}" 2>/dev/null
+  # We use the exit code check method because of Solaris 9
+  if [ ! $? = 0 ]; then
     destDir="${tmpDir}"
     # TO-DO: ensure correct permissions/ownership?
   fi

@@ -18,4 +18,33 @@ If you don't have an existing `locate` binary, you can rename `simple-locate` to
 There's not much to configure, but if you like you can edit the update script.  All the comments you need are there.
 
 ## Compatibility
-So far this has been tested on CentOS 4.7, Centos 6.7, Ubuntu 16.04, FreeBSD 7 and Solaris 11.  Updates have been applied to suit while maintaining relative portability.  I'll be interested to hear if it works elsewhere, specifically on AIX and/or HPUX.  I'm also interested in any feedback on issues etc.
+So far this has been tested on CentOS 4.7, Centos 6.7, Ubuntu 16.04, FreeBSD 7, Solaris 9 and Solaris 11.  Updates have been applied to suit while maintaining relative portability.  I'll be interested to hear if it works elsewhere, specifically on AIX and/or HPUX.  I'm also interested in any feedback on issues etc.
+
+## Performance
+On my workstation, which has an SSD, let's test `find`:
+
+```
+# time find / -type d -name "bin"
+...
+real	0m16.184s
+user	0m2.224s
+sys	0m5.888s
+```
+
+Followed by `locate` (i.e. `mlocate`):
+```
+# time locate -r '.*/bin$'
+...
+real	0m9.778s
+user	0m9.656s
+sys	0m0.032s
+```
+
+Followed by `simple-locate`:
+```
+# time ./smlocate /bin$
+...
+real	0m0.074s
+user	0m0.028s
+sys	0m0.028s
+```

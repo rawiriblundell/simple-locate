@@ -7,48 +7,12 @@
 
 # Style note: This uses awful backticks for SVR4 compatibility
 
-# Select a destination directory
-destDir=/var/lib/simple-locate
-
-# Filesystem types to ignore.  Built up from Linux and Solaris so far...
-# Try to keep it alphabetical if you add anything...
-if [ "`uname`" = FreeBSD ]; then
-  exclFS="nfs"
-else
-  exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
-fi
-
-# We convert this to a find friendly list too
-pruneFS=
-for fs in ${exclFS}; do
-  pruneFS="${pruneFS} -o -fstype ${fs}"
-done
-# Now we chop off the unwanted "-o" at the start of the variable
-pruneFS=`echo "${pruneFS}" | cut -d " " -f3-`
-
-# Directories to ignore.  Built up from Linux and Solaris so far...
-# Try to keep it alphabetical if you add anything...
-# Note: Do NOT add trailing slashes
-exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp"
-
-# Now we convert this to a list we can use in find.
-# We basically want to convert "/afs /amd ..." 
-# to "-o -fstype d -name /afs -o -fstype d -name /amd ..."
-
-# There's very likely a non-portable, very elegant way to do this with 'sed' or 'awk'
-
-# We start by blanking out a new variable
-prunePaths=
-
-# Then for each item in the exclPaths list, we build up the new variable
-for path in ${exclPaths}; do
-  prunePaths="${prunePaths} -o -type d -name ${path}"
-done
-
+########################################
 # If you want to add certain paths to the index, add them here in a space separated list
-# Again, do NOT add trailing slashes
+# Do NOT add trailing slashes e.g. '/opt' = good, '/opt/' = bad
 inclPaths="/"
 
+########################################
 # Figure out our tmp directory.  We want any existing index files to be available 
 # during generation of the new ones.  So we build into tmp then move into place
 if [ -d /tmp ]; then
@@ -65,22 +29,109 @@ if [ -z "${tmpDir}" ]; then
   exit 1
 fi
 
+########################################
+# Select a destination directory
+destDir=/var/lib/simple-locate
+
 # Ensure the destination directory exists
 if [ ! -d "${destDir}" ]; then
   # If we can't create it, set destDir to tmpDir
-  mkdir -p "${destDir}" 2>/dev/null
-  # We use the exit code check method because of Solaris 9
-  if [ ! $? = 0 ]; then
+  if ! mkdir -p "${destDir}" 2>/dev/null; then
     destDir="${tmpDir}"
     # TO-DO: ensure correct permissions/ownership?
   fi
 fi
 
+########################################
+# Filesystem types to ignore.  Built up from Linux and Solaris so far...
+# Try to keep it alphabetical if you add anything...
+exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
+
+# We convert this to a find friendly list
+
+# We start by blanking out a new variable
+pruneFS=
+# Then for each item in the exclFS list, we build up the new variable
+for fs in ${exclFS}; do
+  pruneFS="${pruneFS} -o -fstype ${fs}"
+done
+# Now we chop off the unwanted "-o" at the start of the variable
+pruneFS=`echo "${pruneFS}" | cut -d " " -f3-`
+
+########################################
+# Directory names to ignore.  Built up from Linux and Solaris so far...
+# Try to keep it alphabetical if you add anything...
+# Note: Slashes will be removed, so don't try to specify e.g. 
+# '/tmp /usr/tmp /var/tmp'
+# '/tmp' or 'tmp' will work for all three cases
+# Slashes will be removed later on as well, so '/var/tmp' would become 'vartmp' which won't match anything
+exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp"
+
+# We remove any slashes from exclPaths
+exclPaths=`echo "${exclPaths}" | tr -d "/"`
+
+# Now we convert this to a list we can use in find.
+# We basically want to convert "/afs /amd ..." 
+# to "-o -type d -name afs -o -type d -name amd ..."
+
+# There's very likely a non-portable, very elegant way to do this with 'sed' or 'awk'
+prunePaths=
+for path in ${exclPaths}; do
+  prunePaths="${prunePaths} -o -type d -name ${path}"
+done
+
+########################################
+# Determine whether or not to use merging format
+# If 'false', the indexes will be completely rebuilt each time this update script is run
+# If 'true', only directories changed in the last 24 hours will be reindexed
+# For most basic usage, 'false' is safer.
+mergeIndex=false
+
+# If merging is enabled, we need to generate a list of directories
+# This builds an egrep filter that we apply to any existing index files
+if [ "${mergeIndex}" = true ]; then
+  filterDirs=""
+  find ${inclPaths} -type d -mtime -1 2>/dev/null > "${tmpDir}"/locate.merge
+  # shellcheck disable=SC2162
+  while IFS= read dir; do
+    filterDirs="|${dir}${filterDirs}"
+  done < "${tmpDir}"/locate.merge
+
+  # We no longer need the temporary file
+  rm -f "${tmpDir}"/locate.merge 2>/dev/null
+
+  # Now we chop off the unwanted "|" at the start of the variable
+  filterDirs=`echo "${filterDirs}" | cut -d "|" -f2-`
+
+  # We also generate a find friendly list
+  mergeDirs=`echo "${filterDirs}" | tr "|" " "`
+fi
+
+########################################
 # If we're running as root, we can generate both files
 if [ -w / ]; then
-  # Create our root-readable file
-  # shellcheck disable=SC2086
-  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
+  # Create our root-readable files
+  # If merging is enabled, we need to generate a list of directories
+  if [ "${mergeIndex}" = true ]; then
+    # We need to first check that an index already exists, if it does
+    # then we can proceed. If not, this is probably the initial run or there's some other issue
+    if [ -f "${destDir}"/locate.root  ]; then
+      # So we filter out the modified directories from the current index
+      egrep -v "${filterDirs}" "${destDir}"/locate.root > "${tmpDir}"/locate.root.tmp
+
+      # Now we reindex only those directories and append to the .tmp file
+      # shellcheck disable=SC2086
+      find ${mergeDirs} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null >> "${tmpDir}"/locate.root.tmp
+
+      # And finally move the .tmp file into place
+      mv "${tmpDir}"/locate.root.tmp "${tmpDir}"/locate.root
+    fi
+
+  # Otherwise, if merging is disabled, just do a straight full indexing
+  else
+    # shellcheck disable=SC2086
+    find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
+  fi
 
   # Ensure correct ownership and permissions
   chown 0:0 "${tmpDir}"/locate.root
@@ -113,7 +164,7 @@ else
   # This will list files limited to the invocating user
   printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
   # shellcheck disable=SC2086
-  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
+  find "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
 
   # Ensure correct ownership and permissions
   chmod 444 "${tmpDir}"/locate.user

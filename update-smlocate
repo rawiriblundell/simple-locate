@@ -130,7 +130,7 @@ fi
 # If we're running as root, we can generate both files
 if [ -w / ]; then
   # Create our root-readable files
-  # If merging is enabled, we need to generate a list of directories
+  # First, check if merging is enabled
   if [ "${mergeIndex}" = true ]; then
     # We need to first check that an index already exists, if it does
     # then we can proceed. If not, this is probably the initial run or there's some other issue
@@ -142,7 +142,7 @@ if [ -w / ]; then
       # shellcheck disable=SC2086
       find ${mergeDirs} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null >> "${tmpDir}"/locate.root.tmp
 
-      # And finally move the .tmp file into place
+      # And finally move the .tmp file into place for the rest of the script
       mv "${tmpDir}"/locate.root.tmp "${tmpDir}"/locate.root
     fi
 

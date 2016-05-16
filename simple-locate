@@ -26,11 +26,10 @@
 #DEALINGS IN THE SOFTWARE.
 ############################################################
 
-# Direct Solaris to use xpg4 utils, which don't suck:
-if [ "`uname`" = SunOS ]; then
-  PATH=/usr/xpg4/bin:$PATH
-  export PATH
-fi
+# To cater for Solaris, we put the xpg4 utils, 
+# which don't suck, at the front of PATH:
+PATH=/usr/xpg4/bin:$PATH
+export PATH
 
 # Select a destination directory
 destDir=/var/lib/simple-locate

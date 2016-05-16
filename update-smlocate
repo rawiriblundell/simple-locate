@@ -49,6 +49,19 @@ if [ -z "${tmpDir}" ]; then
 fi
 
 ########################################
+# Cleanup function and traps
+cleanup() {
+  rm -f "${tmpDir}"/locate.merge
+  rm -f "${tmpDir}"/locate.user
+  rm -f "${tmpDir}"/locate.user.tmp
+  rm -f "${tmpDir}"/locate.root
+  rm -f "${tmpDir}"/locate.root.tmp
+} 2>/dev/null
+
+# We want to trap on everything
+trap cleanup HUP INT QUIT TERM EXIT
+
+########################################
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
@@ -67,7 +80,6 @@ fi
 exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
 
 # We convert this to a find friendly list
-
 # We start by blanking out a new variable
 pruneFS=
 # Then for each item in the exclFS list, we build up the new variable
@@ -106,11 +118,16 @@ done
 # For most basic usage, 'false' is safer.
 mergeIndex=false
 
+################################################################################
+# No more editing should be necessary below this line
+################################################################################
+
 # If merging is enabled, we need to generate a list of directories
 # This builds an egrep filter that we apply to any existing index files
 if [ "${mergeIndex}" = true ]; then
   filterDirs=""
-  find ${inclPaths} -type d -mtime -1 2>/dev/null > "${tmpDir}"/locate.merge
+  find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -type d -mtime -1 -print 2>/dev/null > "${tmpDir}"/locate.merge
+  
   # shellcheck disable=SC2162
   while IFS= read dir; do
     filterDirs="|${dir}${filterDirs}"
@@ -123,71 +140,87 @@ if [ "${mergeIndex}" = true ]; then
   filterDirs=`echo "${filterDirs}" | cut -d "|" -f2-`
 
   # We also generate a find friendly list
-  mergeDirs=`echo "${filterDirs}" | tr "|" " "`
-fi
+  inclPaths=`echo "${filterDirs}" | tr "|" " "`
 
-########################################
-# If we're running as root, we can generate both files
-if [ -w / ]; then
-  # Create our root-readable files
-  # First, check if merging is enabled
-  if [ "${mergeIndex}" = true ]; then
-    # We need to first check that an index already exists, if it does
-    # then we can proceed. If not, this is probably the initial run or there's some other issue
-    if [ -f "${destDir}"/locate.root  ]; then
-      # So we filter out the modified directories from the current index
-      egrep -v "${filterDirs}" "${destDir}"/locate.root > "${tmpDir}"/locate.root.tmp
+  # If the root index file exists and is writeable by us (i.e. we're root)...
+  # We filter out the modified directories from the current index
+  if [ -w "${destDir}"/locate.root ]; then
+    egrep -v "${filterDirs}" "${destDir}"/locate.root > "${tmpDir}"/locate.root.tmp
+    # Now we reindex only those directories and append to the .tmp file
+    # shellcheck disable=SC2086
+    find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null >> "${tmpDir}"/locate.root.tmp
 
-      # Now we reindex only those directories and append to the .tmp file
-      # shellcheck disable=SC2086
-      find ${mergeDirs} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null >> "${tmpDir}"/locate.root.tmp
-
-      # And finally move the .tmp file into place for the rest of the script
-      mv "${tmpDir}"/locate.root.tmp "${tmpDir}"/locate.root
+    # And finally move the .tmp file into place for the rest of the script
+    mv "${tmpDir}"/locate.root.tmp "${tmpDir}"/locate.root
+  fi
+  # And/or otherwise, act on the user index file
+  if [ -f "${destDir}"/locate.user ]; then
+    egrep -v "${filterDirs}" "${destDir}"/locate.user > "${tmpDir}"/locate.user.tmp
+    
+    # Create our user-readable file. This should remove most files that aren't 
+    # accessible to users, without needing to stat/test every file
+    # We need to figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
+    # First we test if "true" returns 0, if so we can go ahead with this style
+    if su nobody -c "true" > /dev/null 2>&1; then
+      su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null >> ${tmpDir}/locate.user.tmp"
+    # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
+    elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
+      su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null >> ${tmpDir}/locate.user.tmp"
+    # Put in handling for FreeBSD
+    elif [ "`uname`" = FreeBSD ]; then
+      su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print" >> ${tmpDir}/locate.user.tmp 2>/dev/null
+    # If nothing works, print a notification, then fail back to nothing and hope for the best
+    else
+      printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
+        "Proceeding on the assumption that it does not.  YMMV."
+      su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null >> ${tmpDir}/locate.user.tmp"
     fi
+    
+    mv "${tmpDir}"/locate.user.tmp "${tmpDir}"/locate.user
+  fi
 
-  # Otherwise, if merging is disabled, just do a straight full indexing
-  else
+# Else, if merging is not enabled, we perform a full index.
+else
+  ########################################
+  # If we're running as root, we can generate both files
+  if [ -w / ]; then
+    # Create our root-readable files
     # shellcheck disable=SC2086
     find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.root
-  fi
 
-  # Ensure correct ownership and permissions
-  chown 0:0 "${tmpDir}"/locate.root
-  chmod 440 "${tmpDir}"/locate.root
+    # Now create our user-readable file.  See comments above.
+    if su nobody -c "true" > /dev/null 2>&1; then
+      su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
+      su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    elif [ "`uname`" = FreeBSD ]; then
+      su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print" > ${tmpDir}/locate.user 2>/dev/null
+    else
+      printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
+        "Proceeding on the assumption that it does not.  YMMV."
+      su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
+    fi
 
-  # Create our user-readable file. This should remove most files that aren't 
-  # accessible to users, without needing to stat/test every file
-  # We need to figure out if 'su' requires '-s'.  This issue was found on, surprise: Solaris
-  # First we test if "true" returns 0, if so we can go ahead with this style
-  if su nobody -c "true" > /dev/null 2>&1; then
-    su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
-  # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin
-  elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
-    su nobody -s /bin/sh -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
-  # Put in handling for FreeBSD
-  elif [ "`uname`" = FreeBSD ]; then
-    su -m nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print" > ${tmpDir}/locate.user 2>/dev/null
-  # If nothing works, print a notification, then fail back to nothing and hope for the best
-  else
-    printf "%s\n" "[INFO] - smlocate: Unable to determine if 'su' on this host requires '-s /bin/sh'" \
-      "Proceeding on the assumption that it does not.  YMMV."
-    su nobody -c "find ${inclPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user"
-  fi
-
-  # Ensure correct ownership and permissions
-  chmod 444 "${tmpDir}"/locate.user
-
-# Otherwise, we just generate what we can (i.e. manual run)
-else
+  # Otherwise, we just generate what we can (i.e. manual run)
   # This will list files limited to the invocating user
-  printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
-  # shellcheck disable=SC2086
-  find "${inclPaths}" \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > ${tmpDir}/locate.user
-
-  # Ensure correct ownership and permissions
-  chmod 444 "${tmpDir}"/locate.user
+  else
+    printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
+    # Obviously if a merge file is there, we act appropriately
+    if [ -f "${tmpDir}"/locate.user.tmp ]; then
+      # shellcheck disable=SC2086
+      find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null >> "${tmpDir}"/locate.user.tmp
+      mv "${tmpDir}"/locate.user.tmp "${tmpDir}"/locate.user
+    else
+      # shellcheck disable=SC2086
+      find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null > "${tmpDir}"/locate.user
+    fi
+  fi
 fi
+
+# Ensure correct ownership and permissions
+chown 0:0 "${tmpDir}"/locate.root 2>/dev/null
+chmod 440 "${tmpDir}"/locate.root 2>/dev/null
+chmod 444 "${tmpDir}"/locate.user
 
 # If tmpDir and destDir are different, move the tmp files to the destination
 if [ ! "${tmpDir}" = "${destDir}" ]; then

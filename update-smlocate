@@ -56,6 +56,7 @@ if [ ! -d "${tmpDir}" ]; then
     printf "%s\n" "[ERROR] - smlocate: Unable to create '${tmpDir}', so unable to continue."
     exit 1
   fi
+  chmod 777 "${tmpDir}"
 fi
 
 ########################################
@@ -76,9 +77,9 @@ if [ ! -d "${destDir}" ]; then
   # If we can't create it, set destDir to tmpDir
   if ! mkdir -p "${destDir}" 2>/dev/null; then
     destDir="${tmpDir}"
-    # TO-DO: ensure correct permissions/ownership?
     # TO-DO: Add notification?
   fi
+  chmod 777 "${destDir}"
 fi
 
 ########################################
@@ -123,23 +124,26 @@ done
 
 ########################################
 # Figure out how we are going to run commands as 'nobody'
-suMethod=
+# This is obviously a test for the root user.
+if [ -w / ]; then
+  suMethod=
 
-# First we test if "true" returns 0, if so we can go ahead with this style
-# This is theoretically the most portable option
-if su nobody -c "true" > /dev/null 2>&1; then
-  suMethod="su nobody -c"
-# Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin i.e. (some) Solaris
-elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
-  suMethod="su nobody -s /bin/sh -c"
-# Next we try to cater for '-m' i.e. FreeBSD
-elif su -m nobody -c "true" > /dev/null 2>&1; then
-  suMethod="su -m nobody -c"
-# Otherwise, we fail out
-else
-  printf "%s\n" "[ERROR] - smlocate: Could not determine appropriate method to 'su' to user 'nobody'" \
-    "Unable to continue."
-  exit 1
+  # First we test if "true" returns 0, if so we can go ahead with this style
+  # This is theoretically the most portable option
+  if su nobody -c "true" > /dev/null 2>&1; then
+    suMethod="su nobody -c"
+  # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin i.e. (some) Solaris
+  elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
+    suMethod="su nobody -s /bin/sh -c"
+  # Next we try to cater for '-m' i.e. FreeBSD
+  elif su -m nobody -c "true" > /dev/null 2>&1; then
+    suMethod="su -m nobody -c"
+  # Otherwise, we fail out
+  else
+    printf "%s\n" "[ERROR] - smlocate: Could not determine appropriate method to 'su' to user 'nobody'" \
+      "Unable to continue."
+    exit 1
+  fi
 fi
 
 ########################################
@@ -209,7 +213,18 @@ if [ "${mergeIndex}" = true ]; then
       # shellcheck disable=SC2086
       suFind "${dir}" >> "${tmpDir}"/locate.user 2>/dev/null
     done < "${tmpDir}"/locate.merge
-
+    
+  # If, however, the root index file doesn't exist (and we're root), we create it
+  elif [ ! -f "${destDir}"/locate.root ]; then
+    if [ -w / ]; then
+      fullFind > "${tmpDir}"/locate.root
+    fi
+       
+  # And if the user index file doesn't exist (and we're root), we create it
+  elif [ ! -f  "${destDir}"/locate.user ]; then
+    if [ -w / ]; then
+      suFind > "${tmpDir}"/locate.user 2>/dev/null
+    fi
   # If a file exists for your particular account, process it.
   # Note: root invocations of this script will not update your individual index file
   elif [ -f "${destDir}"/locate."${myUserName}" ]; then
@@ -223,14 +238,13 @@ if [ "${mergeIndex}" = true ]; then
       # shellcheck disable=SC2086
       fullFind "${dir}" >> "${tmpDir}"/locate."${myUserName}"
     done < "${tmpDir}"/locate.merge
-    
-  # If, however, the root index file doesn't exist (and we're root), we create it
-  elif [ ! -f "${destDir}"/locate.root ] -a [ -w / ]; then
-    fullFind > "${tmpDir}"/locate.root
-     
-  # And if the user index file doesn't exist (and we're root), we create it
-  elif [ ! -f  "${destDir}"/locate.user ] -a [ -w / ]; then
-    suFind > "${tmpDir}"/locate.user 2>/dev/null
+ 
+  # Obviously, if your index file doesn't exist, we should create it
+  elif [ -n "${myUserName}" ]; then
+    if [ ! -f "${destDir}"/locate."${myUserName}" ]; then  
+      printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
+      fullFind "${inclPaths}" > "${tmpDir}"/locate."${myUserName}"
+    fi
   fi
 
 # Else, if merging is not enabled, we perform a full index.
@@ -258,7 +272,7 @@ chmod 600 "${tmpDir}"/locate."${myUserName}" 2>/dev/null
 
 # If tmpDir and destDir are different, move the tmp files to the destination
 if [ ! "${tmpDir}" = "${destDir}" ]; then
-  mv "${tmpDir}"/locate.root "${destDir}"
-  mv "${tmpDir}"/locate.user "${destDir}"
+  mv "${tmpDir}"/locate.root "${destDir}" 2>/dev/null
+  mv "${tmpDir}"/locate.user "${destDir}" 2>/dev/null
   mv "${tmpDir}"/locate."${myUserName}" "${destDir}" 2>/dev/null
 fi

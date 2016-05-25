@@ -198,9 +198,9 @@ if [ "${mergeIndex}" = true ]; then
   if [ -w "${destDir}"/locate.root ]; then
     
     # We create copies of the files to work on, using the merge list file
-    # as an input file for 'grep' to filter out the dirs to be reindexed
-    grep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.root > "${tmpDir}"/locate.root
-    grep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.user > "${tmpDir}"/locate.user
+    # as an input file for 'egrep' to filter out the dirs to be reindexed
+    egrep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.root > "${tmpDir}"/locate.root
+    egrep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.user > "${tmpDir}"/locate.user
     
     # Now we need to remove the "^" from the start of each line in the merge file
     sed 's/^\^//' < "${tmpDir}"/locate.merge > "${tmpDir}"/locate.merge2

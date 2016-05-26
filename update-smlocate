@@ -110,9 +110,11 @@ fi
 if [ -w / ]; then
   suMethod=
 
-  # First we test if "true" returns 0, if so we can go ahead with this style
-  # This is theoretically the most portable option
-  if su nobody -c "true" > /dev/null 2>&1; then
+  # First we test with 'sudo'.  If "true" returns 0, we can go ahead with this style
+  if sudo -u nobody -s /bin/sh -c true > /dev/null 2>&1; then
+    suMethod="sudo -u nobody -s /bin/sh -c"
+  # Next, we move to 'su'.  This is theoretically the most portable option
+  elif su nobody -c "true" > /dev/null 2>&1; then
     suMethod="su nobody -c"
   # Next, we try '-s', we use '-s' to override /bin/false or /bin/nologin i.e. (some) Solaris
   elif su nobody -s /bin/sh -c "true" > /dev/null 2>&1; then
@@ -186,16 +188,16 @@ if [ "${mergeIndex}" = true ]; then
     sed 's/^\^//' < "${destDir}"/locate.merge > "${destDir}"/locate.merge2
     mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
     
-	# Next, we go through the merge file and reindex everything
+    # Next, we go through the merge file and reindex everything
     # shellcheck disable=SC2162
     while IFS= read dir; do
       fullFind "${dir}" >> "${destDir}"/locate.root.tmp
       suFind "${dir}" >> "${destDir}"/locate.user.tmp 2>/dev/null
     done < "${destDir}"/locate.merge
 	
-	# Finally, move the temporary files into place
-	mv "${destDir}"/locate.root.tmp "${destDir}"/locate.root
-	mv "${destDir}"/locate.user.tmp "${destDir}"/locate.user
+    # Finally, move the temporary files into place
+    mv "${destDir}"/locate.root.tmp "${destDir}"/locate.root
+    mv "${destDir}"/locate.user.tmp "${destDir}"/locate.user
   fi
   
   # If, however, the root index file doesn't exist (and we're root), we create it
@@ -218,41 +220,39 @@ if [ "${mergeIndex}" = true ]; then
   
   # If a file exists for your particular account, process it.
   # Note: root invocations of this script will not update your individual index file
-  if [ -f "${destDir}"/locate."${myUserName}" ]; then
-    # Obviously this find command will be limited to what you can access.
-    # Defying DRY practices here just saves a lot of headaches
-    grep -v -f "${destDir}"/locate.merge "${destDir}"/locate."${myUserName}" > "${destDir}"/locate."${myUserName}".tmp
-    sed 's/^\^//' < "${destDir}"/locate.merge > "${destDir}"/locate.merge2
-    mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
-    # shellcheck disable=SC2162
-    while IFS= read dir; do
-      fullFind "${dir}" >> "${destDir}"/locate."${myUserName}".tmp
-    done < "${destDir}"/locate.merge
- 
-  # Obviously, if your index file doesn't exist, we should create it
-  elif [ -n "${myUserName}" ]; then
+  if [ -n "${myUserName}" ]; then
     if [ -f "${destDir}"/locate."${myUserName}" ]; then
-	  :
-	else
+      # Obviously this find command will be limited to what you can access.
+      # Defying DRY practices here just saves a lot of headaches
+      grep -v -f "${destDir}"/locate.merge "${destDir}"/locate."${myUserName}" > "${destDir}"/locate."${myUserName}".tmp
+      sed 's/^\^//' < "${destDir}"/locate.merge > "${destDir}"/locate.merge2
+      mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
+      # shellcheck disable=SC2162
+      while IFS= read dir; do
+        fullFind "${dir}" >> "${destDir}"/locate."${myUserName}".tmp
+      done < "${destDir}"/locate.merge
+
+    # Obviously, if your index file doesn't exist, we should create it
+    else
       printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
-      fullFind "${inclPaths}" > "${destDir}"/locate."${myUserName}"
+      fullFind > "${destDir}"/locate."${myUserName}"
     fi
   fi
-
+	
 # Else, if merging is not enabled, we perform a full index.
 # If we're running as root, we can generate both files
 elif [ -w / ]; then
   # Create our root-readable files
-  fullFind "${inclPaths}" > "${destDir}"/locate.root
+  fullFind > "${destDir}"/locate.root
 
   # Now create our user-readable file.  See comments above.
-  suFind "${inclPaths}" > "${destDir}"/locate.user 2>/dev/null
+  suFind > "${destDir}"/locate.user 2>/dev/null
   
 # Otherwise, we just generate what we can (i.e. manual run)
 # This will list files limited to the invocating user
 else
   printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
-  fullFind "${inclPaths}" > "${destDir}"/locate."${myUserName}"
+  fullFind > "${destDir}"/locate."${myUserName}"
 fi
 
 # Ensure correct ownership and permissions

@@ -37,23 +37,22 @@ destDir=/var/lib/simple-locate
 # Define a maximum age in days for the list before we complain
 maxAge=7
 
-# Figure out our tmp directory.  If destDir doesn't exist, we check here next.
-if [ -d /tmp ]; then
-  tmpDir=/tmp
-elif [ -d /var/tmp ]; then
-  tmpDir=/var/tmp
-elif [ -d /usr/tmp ]; then
-  tmpDir=/usr/tmp
-fi
-
-# If destDir doesn't exist, revert to tmpDir
-if [ ! -d "${destDir}" ]; then
-  destDir="${tmpDir}"
+########################################
+# If we're not root, assign our username to a variable
+if [ -w / ]; then
+  #Dummy action required due to SVR4 bourne
+  :
+else
+  myUserName=`whoami`
 fi
 
 # If the user is root, we can search the root file
 if [ -w / ]; then
   listFile="${destDir}"/locate.root
+# Otherwise, we check for our own index file
+elif [ -f "${destDir}"/locate."${myUserName}" ]; then
+  listFile="${destDir}"/locate."${myUserName}"
+# Failing that, we default to locate.user
 else
   listFile="${destDir}"/locate.user
 fi
@@ -70,7 +69,10 @@ if [ -z "$*" ]; then
 fi
 
 # Now check that the file exists
-if [ ! -f "${listFile}" ]; then
+if [ -f "${listFile}" ]; then
+  # SVR4 dummy action
+  :
+else
   if command -v update-smlocate >/dev/null 2>&1; then
     printf "%s\n" "[INFO] - smlocate: ${listFile} not found, attempting to generate it with 'update-smlocate'"
     update-smlocate 2>/dev/null
@@ -82,7 +84,7 @@ fi
 
 # Check the file's age and warn if it exceeds maxAge
 # Note the brackets here are required as 'find' always returns 0
-if [ `find "${listFile}" -mtime +"${maxAge}" >/dev/null 2>&1` ]; then
+if [ "`find ${listFile} -mtime +${maxAge} >/dev/null 2>&1`" ]; then
   printf "%s\n" "[INFO] - smlocate: ${listFile} is older than ${maxAge} days old." \
     "Please run 'update-smlocate', and investigate setting it up as a cron job." \
     "This will ensure that search results stay up to date." "---"

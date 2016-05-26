@@ -1,5 +1,5 @@
 # simple-locate
-A (formerly?) simple shell based alternative for 'locate'
+A (formerly?) simple shell based alternative for `locate`
 
 These scripts are intended to be drop-in for hosts that don't have `locate` or a `locate` type package e.g. `mlocate` or `slocate`.
 
@@ -10,9 +10,9 @@ It's 2016 now.  Hard drive space is running rampant, so we can do away with the 
 ## slocate?  mlocate?  What?
 The short version is that `slocate` tries to prevent you from getting search results for files you wouldn't have access to.  You don't want the users seeing `/root/people_to_murder.txt`, for example.  So, obviously the `s` stands for *secure*.
 
-With `mlocate` it seeks to advance on `slocate` by *merging* differences in the last *n* period, usually 24 hours assuming a daily `updatedb` via `cron`.  At a certain scale (large filesystems, millions of files) merging gives a significant performance boost.
+With `mlocate` it seeks to advance on `slocate` by *merging* differences that it finds.  In other words, it checks each directory it finds against its own db, and if the modified timestamp differs, it reindexes that directory.  At a certain scale (large filesystems, millions of files) merging gives a significant performance boost.
 
-There was another one called `rlocate` which, if my memory serves, was a kernel module that hooked into filesystem events and essentially kept the db updated in near real-time.  Hence the `r`
+There was another one called `rlocate` which, if my memory serves, was a kernel module that hooked into filesystem events and essentially kept the db updated in near real-time.  Hence the `r`.
 
 ### Does simple-locate do any of that?
 `simple-locate` attempts, in a rudamentary way, to replicate `slocate` and `mlocate` functionality.  It keeps the following indices:

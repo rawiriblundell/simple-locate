@@ -1,7 +1,9 @@
 #!/bin/sh
 # shellcheck disable=SC2006
 # Purpose:   Build file lists for use by simple-locate
-# Style note: This uses awful backticks for SVR4 compatibility
+# Style note: This uses some awful methods for SVR4 compatibility, including:
+#             * Backtick command substitution
+#             * No ! pipeline operator (we use ':' instead in if-else-fi's)
 
 ############################################################
 #The MIT License (MIT).
@@ -32,54 +34,23 @@
 inclPaths="/"
 
 ########################################
-# Figure out our tmp directory.  We want any existing index files to be available 
-# during generation of the new ones.  So we build into tmp then move into place
-if [ -d /tmp ]; then
-  tmpDir=/tmp
-elif [ -d /var/tmp ]; then
-  tmpDir=/var/tmp
-elif [ -d /usr/tmp ]; then
-  tmpDir=/usr/tmp
-# We can't allow this variable to be blank
-else
-  printf "%s\n" "[ERROR] - smlocate: Unable to determine the tmp directory on this system."
-  exit 1
-fi
-
-# Now we need to set aside our own place to work
-tmpDir="${tmpDir}/smlocate"
-
-# Ensure the tmp directory exists
-if [ ! -d "${tmpDir}" ]; then
-  # If we can't create it, fail out
-  if ! mkdir -p "${tmpDir}" 2>/dev/null; then
-    printf "%s\n" "[ERROR] - smlocate: Unable to create '${tmpDir}', so unable to continue."
-    exit 1
-  fi
-  chmod 777 "${tmpDir}"
-fi
-
-########################################
-# Cleanup function and traps
-cleanup() {
-  find "${tmpDir}" -type f -name "locate.*" -exec rm -f {} \; 2>/dev/null
-} 
-
-# We want to trap on everything
-trap cleanup HUP INT QUIT TERM EXIT
+# Determine whether or not to use merging format
+# If 'false', the indexes will be completely rebuilt each time this update script is run
+# If 'true', only directories changed in the last 24 hours will be reindexed
+# For most basic usage, 'false' is safer.
+mergeIndex=true
 
 ########################################
 # Select a destination directory
 destDir=/var/lib/simple-locate
 
 # Ensure the destination directory exists
-if [ ! -d "${destDir}" ]; then
-  # If we can't create it, set destDir to tmpDir
-  if ! mkdir -p "${destDir}" 2>/dev/null; then
-    destDir="${tmpDir}"
-    # TO-DO: Add notification?
-  fi
-  chmod 777 "${destDir}"
+if [ -d "${destDir}" ]; then
+  # This is essentially a dummy action
+  chmod 777 "${destDir}" 2>/dev/null
+else
+  mkdir -p "${destDir}" || exit 1
+  chmod 777 "${destDir}" || exit 1
 fi
 
 ########################################
@@ -87,7 +58,9 @@ fi
 # Try to keep it alphabetical if you add anything...
 exclFS="afs autofs coda ctfs dev devfs devpts fd ftpfs hsfs iso9660 lofs mfs mntfs namefs ncpfs nfs NFS objfs pcfs proc shfs smbfs sysfs tmpfs uvfs"
 
-# We convert this to a 'find' friendly list
+# We convert this to a 'find' friendly list.  For portability we use a
+# loop to build this up.  This sacrifices performance, but it's reliable
+
 # We start by blanking out a new variable
 pruneFS=
 # Then for each item in the exclFS list, we build up the new variable
@@ -121,6 +94,15 @@ prunePaths=
 for path in ${exclPaths}; do
   prunePaths="${prunePaths} -o -type d -name ${path}"
 done
+
+########################################
+# If we're not root, assign our username to a variable
+if [ -w / ]; then
+  #Dummy action required due to SVR4 bourne
+  :
+else
+  myUserName=`whoami`
+fi
 
 ########################################
 # Figure out how we are going to run commands as 'nobody'
@@ -169,17 +151,15 @@ suFind() {
 }
 
 ########################################
-# If we're not root, assign our username to a variable
-if [ ! -w / ]; then
-  myUserName=`whoami`
-fi
+# Cleanup function and traps
+cleanup() {
+  rm -f "${destDir}"/locate.merge 2>/dev/null
+  rm -f "${destDir}"/locate.*.tmp 2>/dev/null
+  find "${destDir}" -mtime +30 -exec rm -f {} \; 2>/dev/null
+} 
 
-########################################
-# Determine whether or not to use merging format
-# If 'false', the indexes will be completely rebuilt each time this update script is run
-# If 'true', only directories changed in the last 24 hours will be reindexed
-# For most basic usage, 'false' is safer.
-mergeIndex=true
+# We want to trap on everything
+trap cleanup HUP INT QUIT TERM EXIT
 
 ################################################################################
 # No more editing should be necessary below this line
@@ -192,58 +172,70 @@ if [ "${mergeIndex}" = true ]; then
   # Find all directories modified in the last 24 hours and generate a list file
   # shellcheck disable=SC2086
   find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -type d -mtime -1 -print 2>/dev/null \
-    | egrep -v "${mergeExclPaths}" | sed 's/^/\^/' > "${tmpDir}"/locate.merge
+    | egrep -v "${mergeExclPaths}" | sed 's/^/\^/' > "${destDir}"/locate.merge
   
   # If the root index file exists and is writeable by us (i.e. we're root)...
   if [ -w "${destDir}"/locate.root ]; then
     
     # We create copies of the files to work on, using the merge list file
     # as an input file for 'egrep' to filter out the dirs to be reindexed
-    egrep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.root > "${tmpDir}"/locate.root
-    egrep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate.user > "${tmpDir}"/locate.user
+    egrep -v -f "${destDir}"/locate.merge "${destDir}"/locate.root > "${destDir}"/locate.root.tmp
+    egrep -v -f "${destDir}"/locate.merge "${destDir}"/locate.user > "${destDir}"/locate.user.tmp
     
     # Now we need to remove the "^" from the start of each line in the merge file
-    sed 's/^\^//' < "${tmpDir}"/locate.merge > "${tmpDir}"/locate.merge2
-    mv "${tmpDir}"/locate.merge2 "${tmpDir}"/locate.merge
+    sed 's/^\^//' < "${destDir}"/locate.merge > "${destDir}"/locate.merge2
+    mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
     
+	# Next, we go through the merge file and reindex everything
     # shellcheck disable=SC2162
     while IFS= read dir; do
-      # shellcheck disable=SC2086
-      fullFind "${dir}" >> "${tmpDir}"/locate.root
-      # shellcheck disable=SC2086
-      suFind "${dir}" >> "${tmpDir}"/locate.user 2>/dev/null
-    done < "${tmpDir}"/locate.merge
-    
+      fullFind "${dir}" >> "${destDir}"/locate.root.tmp
+      suFind "${dir}" >> "${destDir}"/locate.user.tmp 2>/dev/null
+    done < "${destDir}"/locate.merge
+	
+	# Finally, move the temporary files into place
+	mv "${destDir}"/locate.root.tmp "${destDir}"/locate.root
+	mv "${destDir}"/locate.user.tmp "${destDir}"/locate.user
+  fi
+  
   # If, however, the root index file doesn't exist (and we're root), we create it
-  elif [ ! -f "${destDir}"/locate.root ]; then
+  if [ -f "${destDir}"/locate.root ]; then
+    :
+  else
     if [ -w / ]; then
-      fullFind > "${tmpDir}"/locate.root
+      fullFind > "${destDir}"/locate.root
     fi
-       
+  fi
+  
   # And if the user index file doesn't exist (and we're root), we create it
-  elif [ ! -f  "${destDir}"/locate.user ]; then
+  if [ -f  "${destDir}"/locate.user ]; then
+    :
+  else
     if [ -w / ]; then
-      suFind > "${tmpDir}"/locate.user 2>/dev/null
+      suFind > "${destDir}"/locate.user 2>/dev/null
     fi
+  fi
+  
   # If a file exists for your particular account, process it.
   # Note: root invocations of this script will not update your individual index file
-  elif [ -f "${destDir}"/locate."${myUserName}" ]; then
+  if [ -f "${destDir}"/locate."${myUserName}" ]; then
     # Obviously this find command will be limited to what you can access.
     # Defying DRY practices here just saves a lot of headaches
-    grep -v -f "${tmpDir}"/locate.merge "${destDir}"/locate."${myUserName}" > "${tmpDir}"/locate."${myUserName}"
-    sed 's/^\^//' < "${tmpDir}"/locate.merge > "${tmpDir}"/locate.merge2
-    mv "${tmpDir}"/locate.merge2 "${tmpDir}"/locate.merge
+    grep -v -f "${destDir}"/locate.merge "${destDir}"/locate."${myUserName}" > "${destDir}"/locate."${myUserName}".tmp
+    sed 's/^\^//' < "${destDir}"/locate.merge > "${destDir}"/locate.merge2
+    mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
     # shellcheck disable=SC2162
     while IFS= read dir; do
-      # shellcheck disable=SC2086
-      fullFind "${dir}" >> "${tmpDir}"/locate."${myUserName}"
-    done < "${tmpDir}"/locate.merge
+      fullFind "${dir}" >> "${destDir}"/locate."${myUserName}".tmp
+    done < "${destDir}"/locate.merge
  
   # Obviously, if your index file doesn't exist, we should create it
   elif [ -n "${myUserName}" ]; then
-    if [ ! -f "${destDir}"/locate."${myUserName}" ]; then  
+    if [ -f "${destDir}"/locate."${myUserName}" ]; then
+	  :
+	else
       printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
-      fullFind "${inclPaths}" > "${tmpDir}"/locate."${myUserName}"
+      fullFind "${inclPaths}" > "${destDir}"/locate."${myUserName}"
     fi
   fi
 
@@ -251,28 +243,23 @@ if [ "${mergeIndex}" = true ]; then
 # If we're running as root, we can generate both files
 elif [ -w / ]; then
   # Create our root-readable files
-  fullFind "${inclPaths}" > "${tmpDir}"/locate.root
+  fullFind "${inclPaths}" > "${destDir}"/locate.root
 
   # Now create our user-readable file.  See comments above.
-  suFind "${inclPaths}" > "${tmpDir}"/locate.user 2>/dev/null
+  suFind "${inclPaths}" > "${destDir}"/locate.user 2>/dev/null
   
 # Otherwise, we just generate what we can (i.e. manual run)
 # This will list files limited to the invocating user
 else
   printf "%s\n" "[INFO] - smlocate: building index now, this may take a while..."
-  fullFind "${inclPaths}" > "${tmpDir}"/locate."${myUserName}"
+  fullFind "${inclPaths}" > "${destDir}"/locate."${myUserName}"
 fi
 
 # Ensure correct ownership and permissions
-chown 0:0 "${tmpDir}"/locate.root 2>/dev/null
-chmod 600 "${tmpDir}"/locate.root 2>/dev/null
-chmod 444 "${tmpDir}"/locate.user 2>/dev/null
-chown "${myUserName}" "${tmpDir}"/locate."${myUserName}" 2>/dev/null
-chmod 600 "${tmpDir}"/locate."${myUserName}" 2>/dev/null
-
-# If tmpDir and destDir are different, move the tmp files to the destination
-if [ ! "${tmpDir}" = "${destDir}" ]; then
-  mv "${tmpDir}"/locate.root "${destDir}" 2>/dev/null
-  mv "${tmpDir}"/locate.user "${destDir}" 2>/dev/null
-  mv "${tmpDir}"/locate."${myUserName}" "${destDir}" 2>/dev/null
-fi
+{
+chown 0:0 "${destDir}"/locate.root
+chmod 600 "${destDir}"/locate.root
+chmod 444 "${destDir}"/locate.user
+chown "${myUserName}" "${destDir}"/locate."${myUserName}"
+chmod 600 "${destDir}"/locate."${myUserName}"
+} 2>/dev/null

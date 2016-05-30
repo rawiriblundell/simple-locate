@@ -175,9 +175,11 @@ Most problems have been dealt with, the major remaining one that I'm aware of is
 * `/home/userA/.local/someApp/cache`
 * `/home/userA/.secret/stashedfiles/`
 
-So the update script will filter `^/home/userA` out of the index files, which cover the other two directories.  It will then reindex `/home/userA`, which includes the other two directories.  But in due course it will reindex the other two directories as well.
+So the update script will filter `^/home/userA` out of the index files, which covers the other two directories.  It will then reindex `/home/userA`, which includes the other two directories.  But in due course it will reindex the other two directories as well.
 
 I currently have no great incentive to fix this, for two reasons:
 
-* Indexing a directory is fast.  While it's inelegant, there's no great performance loss with the reindexing.  The main performance hit is in generating the list of directories modified in the last 24 hours
+* Indexing a directory is pretty fast.  While it's inelegant, there's no great performance loss with the reindexing.  The main performance hit is in generating the list of directories modified in the last 24 hours
 * The searching script runs `sort` and `uniq` across its output anyway, which removes duplicates.
+
+This is a "maybe on a rainy day" fix.

@@ -1,5 +1,6 @@
 #!/bin/sh
 # shellcheck disable=SC2006
+# shellcheck disable=SC2119
 # Purpose:   Build file lists for use by simple-locate
 # Style note: This uses some awful methods for SVR4 compatibility, including:
 #             * Backtick command substitution
@@ -73,27 +74,41 @@ pruneFS=`echo "${pruneFS}" | cut -d " " -f3-`
 ########################################
 # Directory names to ignore.  Built up from Linux and Solaris so far...
 # Try to keep it alphabetical if you add anything...
-# Note: Slashes will be removed, so don't try to specify e.g. 
-# '/tmp /usr/tmp /var/tmp'
-# '/tmp' or 'tmp' will work for all three cases
-# Slashes will be removed later on as well, so '/var/tmp' would become 'vartmp' which won't match anything
-exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp"
+exclPaths="/afs /amd /cdrom /media /proc /sfs /tmp /usr/tmp /var/tmp"
 
 # We make an egrep filter for merging
 mergeExclPaths=`echo "${exclPaths}" | tr -d " " | sed 's/\//|\^\//g' | cut -d "|" -f2-`
 
-# And we remove any slashes from exclPaths for portable find usage
-exclPaths=`echo "${exclPaths}" | tr -d "/"`
-
 # Now we convert this to a list we can use in find.
-# We basically want to convert "/afs /amd ..." 
-# to "-o -type d -name afs -o -type d -name amd ..."
-
 # There's very likely a non-portable, very elegant way to do this with 'sed' or 'awk'
 prunePaths=
-for path in ${exclPaths}; do
-  prunePaths="${prunePaths} -o -type d -name ${path}"
-done
+
+# Test if 'find' can use '-path', this is the fast, POSIX way to do this
+if find . -path / -prune -o -print >/dev/null 2>&1; then
+  for path in ${exclPaths}; do
+    # Ensure it actually exists.
+    if [ -d "${path}" ]; then
+      prunePaths="${prunePaths} -o -path ${path}"
+    fi
+  done
+  suPrunePaths="${prunePaths}"
+
+# If 'find' doesn't have '-path', then we failover to this, much slower method
+else
+  for path in ${exclPaths}; do
+    # Ensure it actually exists.  This is for performance as 'find' will fork
+    # and test absolutely everything.  Don't test against what doesn't exist!
+    if [ -d "${path}" ]; then
+      prunePaths="${prunePaths} -o {} = ${path}"
+    fi
+  done
+  # Now we chop off the unwanted '-o' at the start of the variable
+  prunePaths=`echo "${prunePaths}" | cut -d " " -f3-`
+  
+  # And finally encapsulate it
+  prunePaths=" -o -type d -a -exec test ${prunePaths} ;"
+  suPrunePaths=`echo "${prunePaths}" | sed 's/\;$/\\\\;/'`
+fi
 
 ########################################
 # If we're not root, assign our username to a variable
@@ -142,6 +157,17 @@ fullFind() {
   find ${searchPaths} \( ${pruneFS}${prunePaths} \) -prune -o -print 2>/dev/null
 }
 
+# We shouldn't need pruning to complicate things for a reindex
+mergeFullFind() {
+  if [ -z "$1" ]; then
+    searchPaths="${inclPaths}"
+  else
+    searchPaths="$1"
+  fi
+  # shellcheck disable=SC2086
+  find ${searchPaths} 2>/dev/null
+}
+
 suFind() {
   if [ -z "$1" ]; then
     searchPaths="${inclPaths}"
@@ -149,7 +175,18 @@ suFind() {
     searchPaths="$1"
   fi
   # shellcheck disable=SC2086
-  ${suMethod} "find ${searchPaths} \\( ${pruneFS}${prunePaths} \\) -prune -o -print"
+  ${suMethod} "find ${searchPaths} \\( ${pruneFS}${suPrunePaths} \\) -prune -o -print"
+}
+
+# We shouldn't need pruning to complicate things for a reindex
+mergeSuFind() {
+  if [ -z "$1" ]; then
+    searchPaths="${inclPaths}"
+  else
+    searchPaths="$1"
+  fi
+  # shellcheck disable=SC2086
+  ${suMethod} "find ${searchPaths}"
 }
 
 ########################################
@@ -175,6 +212,14 @@ if [ "${mergeIndex}" = true ]; then
   # shellcheck disable=SC2086
   find ${inclPaths} \( ${pruneFS}${prunePaths} \) -prune -o -type d -mtime -1 -print 2>/dev/null \
     | egrep -v "${mergeExclPaths}" | sed 's/^/\^/' > "${destDir}"/locate.merge
+    
+  # If the merge file is empty, we don't need to continue
+  # (we risk blanking out our index files, so we *really* don't need to continue)
+  if [ -s "${destDir}"/locate.merge ]; then
+    :
+  else
+    exit 0
+  fi
   
   # If the root index file exists and is writeable by us (i.e. we're root)...
   if [ -w "${destDir}"/locate.root ]; then
@@ -191,8 +236,8 @@ if [ "${mergeIndex}" = true ]; then
     # Next, we go through the merge file and reindex everything
     # shellcheck disable=SC2162
     while IFS= read dir; do
-      fullFind "${dir}" >> "${destDir}"/locate.root.tmp
-      suFind "${dir}" >> "${destDir}"/locate.user.tmp 2>/dev/null
+      mergeFullFind "${dir}" >> "${destDir}"/locate.root.tmp
+      mergeSuFind "${dir}" >> "${destDir}"/locate.user.tmp 2>/dev/null
     done < "${destDir}"/locate.merge
 	
     # Finally, move the temporary files into place
@@ -229,7 +274,7 @@ if [ "${mergeIndex}" = true ]; then
       mv "${destDir}"/locate.merge2 "${destDir}"/locate.merge
       # shellcheck disable=SC2162
       while IFS= read dir; do
-        fullFind "${dir}" >> "${destDir}"/locate."${myUserName}".tmp
+        mergeFullFind "${dir}" >> "${destDir}"/locate."${myUserName}".tmp
       done < "${destDir}"/locate.merge
 
     # Obviously, if your index file doesn't exist, we should create it

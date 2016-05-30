@@ -38,6 +38,64 @@ So far this has been tested on CentOS 4.7, Centos 6.7, Ubuntu 16.04, FreeBSD 7, 
 
 For the record: FreeBSD provided some interesting challenges and solutions (e.g. `chown 0:0`), but Solaris 9 has forced the most regressions.
 
+### A note about 'find' compatibility
+In order to try and eke out some performance, `simple-locate` directs `find` to ignore certain filesystem types and paths.  A full command might look something like this:
+
+```
+find / \( -fstype afs -o -fstype autofs -o -fstype coda -o -fstype ctfs -o -fstype dev -o -fstype devfs -o -fstype devpts -o -fstype fd -o -fstype ftpfs -o -fstype hsfs -o -fstype iso9660 -o -fstype lofs -o -fstype mfs -o -fstype mntfs -o -fstype namefs -o -fstype ncpfs -o -fstype nfs -o -fstype NFS -o -fstype objfs -o -fstype pcfs -o -fstype proc -o -fstype shfs -o -fstype smbfs -o -fstype sysfs -o -fstype tmpfs -o -fstype uvfs -o -path /cdrom -o -path /media -o -path /proc -o -path /tmp -o -path /var/tmp \) -prune -o -type d -mtime -1 -print
+```
+
+Unfortunately, not all versions of `find` support `-path`, primarily Solaris and AIX.  I have tested various ways that claim to be portable workarounds and here's what I found:
+
+`-o -type d -name '/path'`
+
+This one upsets GNU `find` which prints an error.  Slashes might not be interpreted, which means you can't exclude e.g. `/var/tmp`, so instead you have to exclude all directories named `tmp`, which might not be what you want.  You lose flexibility and risk having unintended matches, which are then excluded.
+
+`-o -inum $inum_of_/path`
+
+This one had a lot of promise.  It is fast and portable but it's unpredictable.  It works on the premise of excluding by inode number, which can be easily found e.g. `ls -di /some/path | awk '{print $1}'`.  Unfortunately, in testing on a Solaris 9 host, it showed that multiple filesystems shared an inode, and so we had unintended matches again.
+
+```
+sol9test{root}: ls -di /proc
+         2 /proc
+sol9test{root}: ls -di /opt
+         2 /opt
+sol9test{root}: ls -di /home
+         2 /home
+```
+
+See?  We want to exclude `/proc`, it has an inode number of `2`, but so does `/opt` and `/home` at least, which we do want to index.  So let's move on...
+
+`-o -exec test "{}" = "/path" \;`      
+
+Last up is this one.  It is brutally slow compared to all other options, but it's reliable.  Do NOT chain it like this:
+
+`-o -exec test "{}" = "/path" -o -exec test "{}" = "/some/other/path" \;`
+
+Instead, chain it like this:
+
+`-o -exec test "{}" = "/path" -o "{}" = "/some/other/path" \;`
+
+To give you an example, in a test using the full chaining method, on my SSD, finding directories modified in the last 24 hours, we get:
+
+```
+real	12m11.409s
+user	0m16.300s
+sys	1m52.700s
+```
+
+Using the more compact chaining method, however:
+
+```
+real	1m45.280s
+user	0m5.744s
+sys	0m19.556s
+```
+
+These results are repeatable, no matter which order etc you run the commands in.  They will obviously differ per system and day.
+
+So ultimately, `simple-locate` will test whether `find` can use `-path`, and if so, use it.  It will otherwise failover to the slower `-exec test` method.  If, on Solaris or AIX, you can provide GNU `find`, then that will be to your benefit.  Not just for `simple-locate`.
+
 ## Performance
 ### Searching
 On my workstation, which has an SSD, let's test `find`:
@@ -109,3 +167,17 @@ sys	0m4.528s
 ```
 
 As we can tell, at this scale, merging is slightly punitive over our non-merging best-case, but in repeated testing it seems to stick around the 19-22s mark.
+
+## Known Problems
+Most problems have been dealt with, the major remaining one that I'm aware of is duplication in merging.  For example, let's say that the update script finds the following directories as having been modified in the last 24 hours:
+
+* `/home/userA`
+* `/home/userA/.local/someApp/cache`
+* `/home/userA/.secret/stashedfiles/`
+
+So the update script will filter `^/home/userA` out of the index files, which cover the other two directories.  It will then reindex `/home/userA`, which includes the other two directories.  But in due course it will reindex the other two directories as well.
+
+I currently have no great incentive to fix this, for two reasons:
+
+* Indexing a directory is fast.  While it's inelegant, there's no great performance loss with the reindexing.  The main performance hit is in generating the list of directories modified in the last 24 hours
+* The searching script runs `sort` and `uniq` across its output anyway, which removes duplicates.

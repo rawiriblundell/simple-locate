@@ -30,8 +30,10 @@ To install, simply drop these scripts into an appropriate place in your `$PATH` 
 If you don't have an existing `locate` binary, you can rename `simple-locate` to `locate`, or symlink it.  These scripts will otherwise not conflict with, and will happily live side by side with a classic flavour of `locate`.
 
 ## Configuration
-
 There's not much to configure, but if you like you can edit the update script.  All the comments you need are there.
+
+## Usage
+`simple-locate` is basically a veneer thin wrapper for `egrep`, so `egrep` syntax, rather than `locate` applies.  All options available to `egrep` apply to `simple-locate` too, so for example you can do a case-insensitive search using `-i`.
 
 ## Compatibility
 So far this has been tested on CentOS 4.7, Centos 6.7, Ubuntu 16.04, FreeBSD 7, Solaris 9 and Solaris 11.  Updates have been applied to suit while maintaining relative portability.  I'll be interested to hear if it works elsewhere, specifically on AIX and/or HPUX.  I'm also interested in any feedback on issues etc.
